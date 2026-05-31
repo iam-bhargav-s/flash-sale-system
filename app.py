@@ -3,38 +3,39 @@ from pymongo import MongoClient
 
 app = Flask(__name__)
 
-# This is the "Skin" of your website (HTML/CSS)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Flash Sale Admin Dashboard</title>
+    <title>DBMS Comparison: Concurrency Control</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background: #e9ecef; }
-        .container { background: white; padding: 20px; border-radius: 10px; shadow: 0px 4px 8px rgba(0,0,0,0.1); }
-        h2 { color: #2c3e50; border-bottom: 2px solid #4CAF50; padding-bottom: 10px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { padding: 12px; border: 1px solid #dee2e6; text-align: left; }
-        th { background-color: #4CAF50; color: white; }
-        tr:nth-child(even) { background-color: #f8f9fa; }
+        body { font-family: sans-serif; display: flex; gap: 20px; padding: 20px; background: #f0f0f0; }
+        .box { flex: 1; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .bad { border-top: 10px solid #e74c3c; }
+        .good { border-top: 10px solid #2ecc71; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; font-size: 12px; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h2>Live Order Audit Trail (NoSQL Results)</h2>
-        <p>This table shows successful transactions recorded in the <b>orders</b> collection.</p>
+    <div class="box bad">
+        <h2>NO Concurrency Control</h2>
+        <p>Expectation: 10 | <b>Actual: {{ bad_orders|length }}</b></p>
         <table>
-            <tr>
-                <th>Order ID</th>
-                <th>User Reference</th>
-                <th>Time of Purchase</th>
-            </tr>
-            {% for order in orders %}
-            <tr>
-                <td>{{ order['_id'] }}</td>
-                <td>User_{{ order['user_id'] }}</td>
-                <td>{{ order['timestamp'].strftime('%H:%M:%S') }}</td>
-            </tr>
+            <tr><th>User ID</th><th>Time</th></tr>
+            {% for o in bad_orders %}
+            <tr><td>{{ o.user_id }}</td><td>{{ o.timestamp.strftime('%H:%M:%S.%f')[:-3] }}</td></tr>
+            {% endfor %}
+        </table>
+    </div>
+
+    <div class="box good">
+        <h2>WITH Concurrency Control</h2>
+        <p>Expectation: 10 | <b>Actual: {{ good_orders|length }}</b></p>
+        <table>
+            <tr><th>User ID</th><th>Time</th></tr>
+            {% for o in good_orders %}
+            <tr><td>{{ o.user_id }}</td><td>{{ o.timestamp.strftime('%H:%M:%S.%f')[:-3] }}</td></tr>
             {% endfor %}
         </table>
     </div>
@@ -44,17 +45,11 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def index():
-    # Connect to your local MongoDB
     client = MongoClient("mongodb://localhost:27017/")
     db = client["flash_sale_db"]
-    
-    # Get all orders from the 'orders' collection, newest first
-    orders = list(db["orders"].find().sort("timestamp", 1))
-    
-    # Send the data to the HTML template above
-    return render_template_string(HTML_TEMPLATE, orders=orders)
+    bad = list(db.orders_bad.find().sort("timestamp", 1))
+    good = list(db.orders_good.find().sort("timestamp", 1))
+    return render_template_string(HTML_TEMPLATE, bad_orders=bad, good_orders=good)
 
 if __name__ == '__main__':
-    # Start the web server
-    print("Website starting at http://127.0.0.1:5000")
-    app.run(debug=True, port=5000)
+    app.run(debug=True)

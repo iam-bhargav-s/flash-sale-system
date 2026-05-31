@@ -1,33 +1,33 @@
 from pymongo import MongoClient, ReturnDocument
-from datetime import datetime # <--- Added this for the website timestamp
+from datetime import datetime
 
-def attempt_purchase(user_id):
-    try:
-        client = MongoClient("mongodb://localhost:27017/")
-        db = client["flash_sale_db"]
-        inventory = db["inventory"]
-        orders = db["orders"] # <--- Added this to access the orders collection
+# --- SYSTEM WITH CONCURRENCY CONTROL (ATOMIC) ---
+def buy_good(user_id):
+    client = MongoClient("mongodb://localhost:27017/")
+    db = client["flash_sale_db"]
+    
+    # ATOMIC: Check and Update happen in ONE step inside the DB
+    result = db.inventory_good.find_one_and_update(
+        {"item_id": 1, "quantity": {"$gt": 0}},
+        {"$inc": {"quantity": -1}},
+        return_document=ReturnDocument.AFTER
+    )
+    if result:
+        db.orders_good.insert_one({"user_id": user_id, "timestamp": datetime.now()})
+    client.close()
 
-        # 1. ATOMIC UPDATE
-        result = inventory.find_one_and_update(
-            {"item_id": 1, "quantity": {"$gt": 0}}, 
-            {"$inc": {"quantity": -1}},
-            return_document=ReturnDocument.AFTER
-        )
-
-        if result is not None:
-            # We check if the quantity was 0 or more AFTER our update
-            # This ensures only the 10 people who actually changed the DB get an order record
-            if result['quantity'] >= 0:
-                orders.insert_one({
-                    "user_id": user_id,
-                    "timestamp": datetime.now()
-                })
-                print(f"User {user_id}: SUCCESS! | Stock Remaining: {result['quantity']}")
-        else:
-            print(f"User {user_id}: FAILED. | Stock is 0.")
-
-    except Exception as e:
-        print(f"User {user_id}: Error - {e}")
-    finally:
-        client.close()
+# --- SYSTEM WITHOUT CONCURRENCY CONTROL (RACE CONDITION) ---
+def buy_bad(user_id):
+    client = MongoClient("mongodb://localhost:27017/")
+    db = client["flash_sale_db"]
+    
+    # NON-ATOMIC: Step 1: Read
+    item = db.inventory_bad.find_one({"item_id": 1})
+    
+    # Step 2: Python checks the value (This is where the race condition happens!)
+    if item["quantity"] > 0:
+        new_qty = item["quantity"] - 1
+        # Step 3: Update
+        db.inventory_bad.update_one({"item_id": 1}, {"$set": {"quantity": new_qty}})
+        db.orders_bad.insert_one({"user_id": user_id, "timestamp": datetime.now()})
+    client.close()
